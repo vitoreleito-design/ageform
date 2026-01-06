@@ -94,6 +94,7 @@
     }
 
     .site-footer{margin-top:16px;font-size:12px;color:var(--muted);text-align:center}
+    a.inline-link{color:var(--brand);font-weight:700;text-decoration:none}
   </style>
 </head>
 <body>
@@ -144,13 +145,26 @@
 
         <div class="grid-2">
           <div>
-            <label for="sindico">Síndico</label>
-            <input id="sindico" name="sindico" type="text" placeholder="Nome do síndico" required>
+            <label for="condominio">Nome do condomínio (opcional)</label>
+            <input id="condominio" name="condominio" type="text" placeholder="Ex: Condomínio Jardim das Flores">
           </div>
 
           <div>
+            <label for="sindico">Síndico</label>
+            <input id="sindico" name="sindico" type="text" placeholder="Nome do síndico" required>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div>
             <label for="telSindico">Telefone do síndico</label>
             <input id="telSindico" name="telSindico" type="tel" placeholder="(xx) 9xxxx-xxxx" required>
+          </div>
+
+          <div>
+            <label for="termoFile">Anexar Termo de Vistoria (foto) — opcional</label>
+            <input id="termoFile" name="termoFile" type="file" accept="image/*">
+            <div class="muted-sm">Se anexado, será salvo em "Termo de Vistorias" no Google Drive e o link será registrado na planilha.</div>
           </div>
         </div>
 
@@ -223,7 +237,7 @@
   </div>
 
   <script>
-    // URL do Apps Script (coloquei a que você enviou)
+    // URL do Apps Script (coloque a sua implantação final aqui, se mudar)
     const scriptURL = "https://script.google.com/macros/s/AKfycbzGUuBpOIsP_LXiKnPhOKlQvrQS3K-56blQWr3RyW_Yd-ex7VaqDmamL6HfRGZl4tbskA/exec";
 
     document.getElementById('footer-year').textContent = new Date().getFullYear();
@@ -255,6 +269,25 @@
       return true;
     }
 
+    // helper para ler arquivo como base64
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Erro ao ler arquivo'));
+        reader.onload = () => {
+          // reader.result é "data:<mime>;base64,AAAA..."
+          const result = reader.result;
+          const idx = result.indexOf(',') + 1;
+          resolve({
+            base64: result.slice(idx),
+            filename: file.name,
+            mimetype: file.type || 'image/jpeg'
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
     form.addEventListener('submit', async (e) =>{
       e.preventDefault();
 
@@ -267,6 +300,24 @@
 
       const fd = new FormData(form);
 
+      // checar arquivo
+      const fileInput = document.getElementById('termoFile');
+      if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        try {
+          const f = await fileToBase64(fileInput.files[0]);
+          // append base64 parts expected by the Apps Script
+          fd.append('termo_base64', f.base64);
+          fd.append('termo_filename', f.filename);
+          fd.append('termo_mimetype', f.mimetype);
+        } catch (err) {
+          console.error('Erro ao converter arquivo:', err);
+          setMsg('❌ Erro ao processar o arquivo. Tente outro arquivo.', 'error');
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Salvar registro';
+          return;
+        }
+      }
+
       try {
         const res = await fetch(scriptURL, { method: 'POST', body: fd });
         const text = await res.text();
@@ -277,7 +328,9 @@
         }
 
         if (json.status === 'ok') {
-          setMsg(`✅ Registro salvo (linha ${json.row || '—'}).`, 'ok');
+          let extra = '';
+          if (json.fileUrl) extra = `<div>Arquivo salvo: <a class="inline-link" href="${json.fileUrl}" target="_blank" rel="noopener">ver termo</a></div>`;
+          setMsg(`✅ Registro salvo (linha ${json.row || '—'}). ${extra}`, 'ok');
           form.reset();
         } else if (json.status === 'duplicate') {
           // caso o Apps Script implemente verificação e retorne "duplicate"
@@ -303,6 +356,3 @@
   </script>
 </body>
 </html>
-
-
-
